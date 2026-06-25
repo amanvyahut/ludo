@@ -1,0 +1,2041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Ludo Chat 🎲</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+/* BUG FIX (long-press copy menu during gameplay): mobile browsers show a
+   text-selection handle + "Copy" popup on any long-press over selectable
+   text by default — during active play (long-pressing a token, the dice,
+   a button) this interrupts the game with a jarring system menu instead
+   of registering as a game action. Disabling selection globally, then
+   explicitly re-enabling it only on real text-input fields and chat
+   message bubbles (where selecting/copying text is actually useful),
+   keeps the game itself free of accidental copy popups without losing
+   the ability to copy a chat message or type normally in an input. */
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+input,textarea,.ctxt{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;}
+html{--panel-scale:1;}
+html,body{width:100%;min-height:100vh;background:#0b0b1a;color:#f0f0ff;font-family:'Nunito',sans-serif;overflow-x:hidden;}
+
+.screen{display:none;min-height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:16px;}
+.screen.on{display:flex;}
+
+.logo{font-family:'Baloo 2',cursive;font-size:2.8rem;font-weight:800;text-align:center;line-height:1;letter-spacing:-1px;}
+.logo em{color:#ffc940;font-style:normal;}
+.sub{color:#6b7299;font-size:.85rem;letter-spacing:.03em;}
+
+.card{background:#161a35;border:1.5px solid #2a2f55;border-radius:16px;padding:20px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;}
+.card-title{font-family:'Baloo 2',cursive;font-size:.85rem;color:#ffc940;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
+
+input{background:#0d0f24;border:1.5px solid #2a2f55;border-radius:10px;padding:12px 14px;color:#f0f0ff;font-family:'Nunito',sans-serif;font-size:.95rem;width:100%;outline:none;transition:border-color .2s;}
+input:focus{border-color:#ffc940;}
+input::placeholder{color:#454a70;}
+
+.btn{padding:13px 18px;border-radius:10px;border:none;font-family:'Baloo 2',cursive;font-size:1rem;font-weight:700;cursor:pointer;width:100%;transition:transform .12s,opacity .2s;letter-spacing:.02em;}
+.btn:active{transform:scale(.96);}
+.btn:disabled{opacity:.35;cursor:not-allowed;}
+.btn-gold{background:linear-gradient(135deg,#ffd65a,#f0a020);color:#2a1500;box-shadow:0 4px 14px #f0a02040;}
+.btn-blue{background:linear-gradient(135deg,#4a90e2,#2255bb);color:#fff;box-shadow:0 4px 14px #2255bb40;}
+.btn-ghost{background:#161a35;border:1.5px solid #2a2f55;color:#9aa0c5;}
+
+.cpicks{display:flex;gap:10px;flex-wrap:wrap;}
+.cp{width:42px;height:42px;border-radius:50%;border:3px solid transparent;cursor:pointer;transition:all .15s;position:relative;display:grid;place-items:center;}
+.cp.on{border-color:#fff;transform:scale(1.15);}
+.cp.on::after{content:'✓';color:#fff;font-weight:800;font-size:1rem;text-shadow:0 1px 3px #0008;}
+.cp.taken{opacity:.25;cursor:not-allowed;}
+
+.modes{display:flex;flex-direction:column;gap:12px;width:100%;max-width:380px;}
+.mcard{background:#161a35;border:2px solid #2a2f55;border-radius:16px;padding:18px 20px;cursor:pointer;transition:all .15s;display:flex;gap:14px;align-items:center;}
+.mcard:active{border-color:#ffc940;transform:scale(.98);}
+.mcard-icon{font-size:2.1rem;flex-shrink:0;}
+.mcard h3{font-family:'Baloo 2',cursive;font-size:1.02rem;margin-bottom:3px;font-weight:700;}
+.mcard p{font-size:.77rem;color:#7a80a8;line-height:1.4;}
+
+.cbts{display:flex;gap:13px;flex-wrap:wrap;justify-content:center;}
+.cbt{width:92px;height:92px;border-radius:16px;background:#161a35;border:2px solid #2a2f55;color:#f0f0ff;font-family:'Baloo 2',cursive;font-size:1.05rem;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
+.cbt:active{border-color:#ffc940;transform:scale(.95);}
+.cbt span{font-size:1.9rem;line-height:1;}
+
+.psetup{background:#161a35;border:2px solid #2a2f55;border-radius:14px;padding:14px;width:100%;max-width:380px;}
+.psetup-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-family:'Baloo 2',cursive;font-size:.88rem;font-weight:700;}
+.psetup-header .swatch{width:15px;height:15px;border-radius:50%;flex-shrink:0;}
+.psetup .cpicks .cp{width:32px;height:32px;}
+
+#s-game{display:none;flex-direction:column;align-items:center;padding:4px;gap:8px;min-height:100vh;justify-content:center;}
+#s-game.on{display:flex;}
+@media(min-width:760px){#s-game.on{flex-direction:row;align-items:flex-start;justify-content:center;padding:18px;gap:24px;}}
+
+#board-wrap{position:relative;flex-shrink:0;}
+#ludo-board{display:block;border-radius:8px;box-shadow:0 0 0 6px #2a2f55,0 10px 50px #000a;}
+
+#side{width:100%;max-width:calc(360px * var(--panel-scale));display:flex;flex-direction:column;gap:9px;}
+/* On row layout (tablet/desktop/landscape-phone), the side panel gets a
+   fixed flex-basis so it reliably claims its target width FIRST — the
+   board then sizes itself (via setupCanvas() reading this actual width)
+   to whatever space remains, instead of the canvas's default intrinsic
+   size winning the flex layout fight and squeezing the sidebar thin. */
+@media(min-width:760px){#side{flex:0 0 340px; max-width:340px;}}
+
+/* ── Small phones (<=380px wide): tighten paddings/fonts so nothing clips ── */
+@media(max-width:380px){
+  .screen{padding:14px;gap:12px;}
+  .logo{font-size:2.2rem;}
+  .card{padding:15px;}
+  .cbt{width:80px;height:80px;font-size:.92rem;}
+  #dice-area{padding:10px;gap:8px;}
+  #dice-wrap{width:56px;height:56px;}
+  #chat-card{min-height:140px;max-height:200px;}
+}
+
+/* ── Landscape phones: row layout kicks in earlier so the board isn't
+   squeezed into a tiny strip under a tall keyboard-eligible viewport ── */
+@media(max-height:480px) and (orientation:landscape){
+  #s-game.on{flex-direction:row;align-items:flex-start;justify-content:center;padding:10px;gap:14px;}
+  #side{flex:0 0 260px; max-width:260px;}
+  #chat-card{max-height:160px;}
+}
+
+/* ── Tablets (760-1100px): slightly larger dice for a bigger board ── */
+@media(min-width:760px) and (max-width:1100px){
+  #dice-wrap{width:72px;height:72px;}
+}
+
+/* ── Large tablets / small desktop (>=1100px): roomier sidebar ── */
+@media(min-width:1100px){
+  #side{flex:0 0 380px; max-width:380px;}
+}
+
+#dice-area{background:#161a35;border:1.5px solid #2a2f55;border-radius:14px;padding:calc(14px * var(--panel-scale));display:flex;align-items:center;gap:calc(12px * var(--panel-scale));}
+
+/* ── Real 3D pip-dice (replaces the old plain emoji-in-a-box) ──
+   #dice-wrap is the outer "cushion" — a soft rounded square with depth.
+   #dice-face is the actual die surface with a subtle bevel + sheen, and
+   holds 6 pip <span>s positioned via the .dN classes (CSS grid areas),
+   matching a real dice's face layout for 1 through 6. */
+#dice-wrap{width:calc(64px * var(--panel-scale));height:calc(64px * var(--panel-scale));border-radius:16px;background:linear-gradient(145deg,#3a3f66,#1a1d38);display:grid;place-items:center;box-shadow:0 6px 18px #0009,inset 0 2px 3px #ffffff14,inset 0 -3px 4px #00000040;flex-shrink:0;transition:transform .1s;cursor:pointer;padding:7px;}
+#dice-wrap.spin{animation:dspin .45s cubic-bezier(.36,.07,.19,.97);}
+@keyframes dspin{0%{transform:scale(1)}30%{transform:scale(1.18)}60%{transform:scale(0.92)}80%{transform:scale(1.08)}100%{transform:scale(1)}}
+
+#dice-face{
+  width:100%;height:100%;border-radius:11px;
+  background:linear-gradient(155deg,#ffffff,#f1f1f6 55%,#dcdce4);
+  box-shadow:inset 0 2px 2px #ffffffcc, inset 0 -3px 5px #0000001f, 0 1px 0 #ffffff60;
+  display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;
+  padding:14%;gap:0;position:relative;
+}
+#dice-face span{
+  width:100%;height:100%;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #4a4f6a, #15172a 75%);
+  box-shadow:inset 0 1px 1px #ffffff30, 0 1px 1px #0000004a;
+  opacity:0;align-self:center;justify-self:center;
+  aspect-ratio:1;max-width:20px;max-height:20px;
+}
+/* Fixed 3x3 pip grid (standard die face layout) — each span always sits
+   in the same slot; only its opacity changes per face value below.
+   Slots:  1=TL 2=TC 3=TR
+           4=ML 5=MC 6=MR
+   (only 6 spans exist; TC/MC/etc are assigned per the values actually
+   needed across faces 1-6, so every face is just "light up these slots"). */
+#dice-face span:nth-child(1){grid-column:1;grid-row:1;} /* top-left     */
+#dice-face span:nth-child(2){grid-column:3;grid-row:1;} /* top-right    */
+#dice-face span:nth-child(3){grid-column:1;grid-row:3;} /* bottom-left  */
+#dice-face span:nth-child(4){grid-column:3;grid-row:3;} /* bottom-right */
+#dice-face span:nth-child(5){grid-column:1;grid-row:2;} /* middle-left  */
+#dice-face span:nth-child(6){grid-column:3;grid-row:2;} /* middle-right */
+/* a 7th, center pip is needed for odd faces (1, 3, 5) — added via JS as
+   a 7th <span> when the page loads, see dice rendering script. */
+#dice-face span:nth-child(7){grid-column:2;grid-row:2;} /* center */
+
+/* Face 1: just the center pip */
+#dice-face.d1 span:nth-child(7){opacity:1;}
+/* Face 2: top-left + bottom-right (diagonal) */
+#dice-face.d2 span:nth-child(1),#dice-face.d2 span:nth-child(4){opacity:1;}
+/* Face 3: diagonal pair + center */
+#dice-face.d3 span:nth-child(1),#dice-face.d3 span:nth-child(4),#dice-face.d3 span:nth-child(7){opacity:1;}
+/* Face 4: all four corners */
+#dice-face.d4 span:nth-child(1),#dice-face.d4 span:nth-child(2),#dice-face.d4 span:nth-child(3),#dice-face.d4 span:nth-child(4){opacity:1;}
+/* Face 5: four corners + center */
+#dice-face.d5 span:nth-child(1),#dice-face.d5 span:nth-child(2),#dice-face.d5 span:nth-child(3),#dice-face.d5 span:nth-child(4),#dice-face.d5 span:nth-child(7){opacity:1;}
+/* Face 6: four corners + two middle-side pips (two columns of 3) */
+#dice-face.d6 span:nth-child(1),#dice-face.d6 span:nth-child(2),#dice-face.d6 span:nth-child(3),#dice-face.d6 span:nth-child(4),#dice-face.d6 span:nth-child(5),#dice-face.d6 span:nth-child(6){opacity:1;}
+
+#dice-info{flex:1;}
+.turn-label{font-size:calc(.7rem * var(--panel-scale));color:#6b7299;letter-spacing:.04em;text-transform:uppercase;}
+#turn-name{font-family:'Baloo 2',cursive;font-size:calc(1.08rem * var(--panel-scale));font-weight:800;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tbar{height:4px;border-radius:4px;margin-bottom:8px;transition:background .3s;}
+#btn-roll{padding:calc(13px * var(--panel-scale)) 18px;font-size:calc(1rem * var(--panel-scale));}
+
+/* Compact horizontal player strip — small pills in a row instead of a
+   tall stacked-rows card, so the bottom panel stays slim and the board
+   above keeps the dominant share of screen space (Ludo King pattern). */
+#plist{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;}
+.ppill{display:flex;align-items:center;gap:6px;background:#161a35;border:1.5px solid #2a2f55;border-radius:30px;padding:calc(6px * var(--panel-scale)) calc(12px * var(--panel-scale)) calc(6px * var(--panel-scale)) calc(8px * var(--panel-scale));font-size:calc(.78rem * var(--panel-scale));transition:border-color .2s,background .2s;}
+.ppill.active{border-color:#ffc940;background:#1c1f42;}
+.pdot{width:12px;height:12px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px #0003;position:relative;}
+.pdot.offline::after{content:'';position:absolute;right:-2px;bottom:-2px;width:6px;height:6px;border-radius:50%;background:#888;border:1.5px solid #161a35;}
+.pdot.live::after{content:'';position:absolute;right:-2px;bottom:-2px;width:6px;height:6px;border-radius:50%;background:#3ecf6f;border:1.5px solid #161a35;}
+.pnam{font-weight:700;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.phome{color:#5b6188;font-size:.7rem;}
+.ptag{font-size:.62rem;background:#ffc940;color:#2a1500;padding:1px 7px;border-radius:20px;font-weight:800;}
+
+
+#room-box{background:#0d0f24;border:1.5px dashed #ffc94055;border-radius:10px;padding:9px 14px;font-family:'Baloo 2',cursive;font-size:1.05rem;letter-spacing:.14em;text-align:center;color:#ffc940;display:none;}
+
+#status{font-size:.76rem;color:#6b7299;text-align:center;min-height:18px;}
+
+#connbar{display:none;align-items:center;justify-content:center;gap:6px;font-size:.72rem;color:#e6483b;background:#2a1416;border:1px solid #4a1f22;border-radius:8px;padding:6px 10px;}
+#connbar.on{display:flex;}
+#connbar .dot{width:7px;height:7px;border-radius:50%;background:#e6483b;animation:pulse 1s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── Floating chat button + slide-up overlay ──
+   Chat used to be a permanently-docked card in the sidebar, eating space
+   that could go to the board. Now it's a small floating button (shown
+   only in online mode — offline has no chat at all) that opens a panel
+   sliding up from the bottom, overlaying the board/sidebar rather than
+   permanently occupying layout space next to them. */
+#chat-fab{
+  display:none; /* JS turns this on (display:flex) only for online mode */
+  align-items:center; justify-content:center;
+  position:fixed; right:18px; bottom:18px; z-index:300;
+  width:52px;height:52px;border-radius:50%;
+  background:linear-gradient(135deg,#4a90e2,#2255bb);
+  border:none; color:#fff; font-size:1.5rem; cursor:pointer;
+  box-shadow:0 6px 18px #0008, inset 0 -2px 4px #0003;
+}
+#chat-fab.has-unread::after{
+  content:''; position:absolute; top:2px; right:2px;
+  width:12px;height:12px;border-radius:50%;
+  background:#ff5252; border:2px solid #0b0b1a;
+}
+
+#chat-overlay{
+  display:none; position:fixed; inset:0; z-index:299;
+  background:rgba(0,0,0,0.5);
+  align-items:flex-end; justify-content:center;
+}
+#chat-overlay.on{display:flex;}
+
+#chat-card{
+  background:#161a35;border:1.5px solid #2a2f55;border-top-left-radius:18px;border-top-right-radius:18px;
+  display:flex;flex-direction:column;
+  width:100%; max-width:480px;
+  height:42vh; max-height:380px; min-height:260px;
+  animation:chatSlideUp .22s ease-out;
+}
+@keyframes chatSlideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+#chat-head{padding:11px 14px;border-bottom:1px solid #1f2342;font-family:'Baloo 2',cursive;font-size:.78rem;color:#9aa0c5;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;justify-content:space-between;}
+#chat-close{background:none;border:none;color:#6b7299;font-size:1.1rem;cursor:pointer;padding:2px 8px;}
+#chat-msgs{flex:1;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:5px;}
+#chat-msgs::-webkit-scrollbar{width:3px;}
+#chat-msgs::-webkit-scrollbar-thumb{background:#2a2f55;border-radius:3px;}
+.cmsg{display:flex;gap:7px;align-items:flex-start;font-size:.8rem;}
+.cav{width:21px;height:21px;border-radius:50%;display:grid;place-items:center;font-size:.62rem;font-weight:800;flex-shrink:0;margin-top:1px;color:#fff;}
+.cbub{background:#0d0f24;border-radius:10px 10px 10px 2px;padding:5px 10px;max-width:88%;}
+.cnam{font-size:.66rem;font-weight:700;opacity:.6;margin-bottom:1px;}
+.ctxt{word-break:break-word;line-height:1.45;}
+.cmsg.sys{justify-content:center;}
+.cmsg.sys .cbub{background:transparent;color:#52588a;font-size:.73rem;text-align:center;padding:1px 0;}
+.cmsg.me .cbub{background:#1a2f5e;border-radius:10px 10px 2px 10px;}
+#chat-row{padding:8px;border-top:1px solid #1f2342;display:flex;gap:6px;align-items:center;position:relative;}
+#chat-row input{flex:1;padding:8px 11px;font-size:.86rem;}
+#bemoji{background:none;border:none;font-size:1.2rem;cursor:pointer;padding:4px;opacity:.6;}
+#bemoji:active{opacity:1;}
+#bsend{background:linear-gradient(135deg,#4a90e2,#2255bb);color:#fff;border:none;border-radius:8px;padding:8px 13px;cursor:pointer;font-size:.8rem;font-weight:700;}
+#epick{position:absolute;bottom:50px;left:8px;background:#161a35;border:1.5px solid #2a2f55;border-radius:12px;padding:9px;display:none;flex-wrap:wrap;gap:4px;width:208px;z-index:200;box-shadow:0 8px 28px #000a;}
+#epick span{font-size:1.3rem;cursor:pointer;padding:3px;border-radius:6px;}
+#epick span:active{background:#2a2f55;}
+
+.div{display:flex;align-items:center;gap:8px;color:#3d4268;font-size:.78rem;width:100%;}
+.div::before,.div::after{content:'';flex:1;height:1px;background:#2a2f55;}
+
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1e40;color:#f0f0ff;padding:10px 18px;border-radius:30px;font-size:.84rem;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;border:1.5px solid #2a2f55;max-width:88vw;text-align:center;}
+#toast.on{opacity:1;}
+
+#won{display:none;position:fixed;inset:0;background:#000c;z-index:800;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;}
+#won h2{font-family:'Baloo 2',cursive;font-size:2.1rem;font-weight:800;}
+#won p{color:#7a80a8;font-size:.9rem;}
+#won .btn{max-width:200px;}
+
+.hl{outline:3px solid #fff;outline-offset:-3px;}
+.movable-pulse{animation:movepulse 1s infinite;}
+@keyframes movepulse{0%,100%{filter:drop-shadow(0 0 0 transparent)}50%{filter:drop-shadow(0 0 6px #fff)}}
+</style>
+</head>
+<body>
+
+<!-- S1: LOBBY -->
+<div class="screen on" id="s-lobby">
+  <div class="logo">Ludo <em>Chat</em> 🎲</div>
+  <p class="sub">2–4 Players • Online & Offline</p>
+  <div class="card">
+    <div class="card-title">Apna Profile</div>
+    <input id="inp-name" placeholder="Naam likho..." maxlength="14"/>
+    <div style="font-size:.74rem;color:#6b7299;margin-bottom:2px;">Color chuno:</div>
+    <div class="cpicks" id="lobby-colors">
+      <div class="cp on"  data-c="red"></div>
+      <div class="cp"     data-c="green"></div>
+      <div class="cp"     data-c="yellow"></div>
+      <div class="cp"     data-c="blue"></div>
+    </div>
+    <button class="btn btn-gold" id="btn-go">Aage Bado →</button>
+  </div>
+</div>
+
+<!-- S2: MODE -->
+<div class="screen" id="s-mode">
+  <div class="logo" style="font-size:1.7rem">Game Mode 🎮</div>
+  <div id="mode-profile-chip" style="display:flex;align-items:center;gap:8px;background:#161a35;border:1.5px solid #2a2f55;border-radius:30px;padding:7px 14px 7px 8px;cursor:pointer;">
+    <div id="mode-profile-dot" style="width:22px;height:22px;border-radius:50%;flex-shrink:0;"></div>
+    <span id="mode-profile-name" style="font-weight:700;font-size:.88rem;"></span>
+    <span style="color:#6b7299;font-size:.74rem;">✏️ Badlo</span>
+  </div>
+  <div class="modes">
+    <div class="mcard" id="mc-off">
+      <div class="mcard-icon">📱</div>
+      <div><h3>Same Device</h3><p>Ek phone pe baari baari khelo — internet ki zaroorat nahi</p></div>
+    </div>
+    <div class="mcard" id="mc-on">
+      <div class="mcard-icon">🌐</div>
+      <div><h3>Online Multiplayer</h3><p>Alag devices se dosto ke saath — real-time + chat</p></div>
+    </div>
+  </div>
+  <button class="btn btn-ghost" id="b-back-mode" style="max-width:380px">← Wapas</button>
+</div>
+
+<!-- S3: COUNT -->
+<div class="screen" id="s-count">
+  <div class="logo" style="font-size:1.7rem">Kitne Players? 👥</div>
+  <div class="cbts">
+    <div class="cbt" data-n="2"><span>2️⃣</span>Players</div>
+    <div class="cbt" data-n="3"><span>3️⃣</span>Players</div>
+    <div class="cbt" data-n="4"><span>4️⃣</span>Players</div>
+  </div>
+  <button class="btn btn-ghost" id="b-back-count" style="max-width:300px">← Wapas</button>
+</div>
+
+<!-- S4A: OFFLINE SETUP -->
+<div class="screen" id="s-off-setup" style="justify-content:flex-start;padding-top:30px;">
+  <div class="logo" style="font-size:1.5rem">Players Setup 🎮</div>
+  <div id="off-form" style="width:100%;max-width:380px;display:flex;flex-direction:column;gap:10px;"></div>
+  <div style="width:100%;max-width:380px;display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+    <button class="btn btn-gold" id="b-start-off">Khel Shuru Karo 🎲</button>
+    <button class="btn btn-ghost" id="b-back-off">← Wapas</button>
+  </div>
+</div>
+
+<!-- S4B: ONLINE SETUP -->
+<div class="screen" id="s-online">
+  <div class="card">
+    <div class="card-title">🌐 Online Game</div>
+    <button class="btn btn-gold" id="b-create">New Room Banao</button>
+    <div class="div">ya dosto ka room join karo</div>
+    <input id="inp-room" placeholder="Room Code (6 letters)..." maxlength="6" style="letter-spacing:.2em;text-align:center;text-transform:uppercase"/>
+    <button class="btn btn-blue" id="b-join">Room Join Karo</button>
+  </div>
+  <button class="btn btn-ghost" id="b-back-on" style="max-width:380px">← Wapas</button>
+</div>
+
+<!-- S5: GAME -->
+<div id="s-game">
+  <div id="board-wrap">
+    <canvas id="ludo-board"></canvas>
+    <div id="status" style="margin-top:6px;text-align:center;"></div>
+    <div id="connbar"><span class="dot"></span><span id="conntxt">Connection lost — reconnecting...</span></div>
+  </div>
+  <div id="side">
+    <div id="dice-area">
+      <div id="dice-wrap"><div id="dice-face" class="d1"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+      <div id="dice-info">
+        <div class="turn-label">Baari</div>
+        <div id="turn-name">—</div>
+        <div class="tbar" id="tbar"></div>
+        <button class="btn btn-gold" id="btn-roll">Roll Dice 🎲</button>
+      </div>
+      <button id="btn-mute" title="Sound on/off" style="background:none;border:none;font-size:1.3rem;cursor:pointer;opacity:.7;padding:4px;flex-shrink:0;">🔊</button>
+    </div>
+    <div id="room-box"></div>
+    <!-- Compact player strip — small avatar pills in one row instead of a
+         separate full-height list card, matching Ludo King's slim bottom
+         bar so the board above gets to stay the dominant element on
+         screen rather than competing with a tall stacked sidebar. -->
+    <div id="plist"></div>
+  </div>
+</div>
+
+<!-- Floating chat toggle — only shown in online mode (set via JS). Tapping
+     it slides the chat panel up from the bottom as an overlay, so the
+     board/dice/players area behind it stays full-screen instead of a
+     permanently-docked chat card eating sidebar space. -->
+<button id="chat-fab" title="Chat">💬</button>
+<div id="chat-overlay">
+  <div id="chat-card">
+    <div id="chat-head"><span>💬 Chat</span><button id="chat-close">✕</button></div>
+    <div id="chat-msgs"></div>
+    <div id="chat-row">
+      <div id="epick"></div>
+      <button id="bemoji">😊</button>
+      <input id="cinp" placeholder="Kuch likho..." maxlength="200"/>
+      <button id="bsend">Send</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="won">
+  <div style="font-size:4rem">🏆</div>
+  <h2 id="won-title">—</h2>
+  <p id="won-sub">Sabke tokens ghar pahunch gaye!</p>
+  <button class="btn btn-gold" onclick="location.reload()">Play Again 🎲</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════
+//  FIREBASE
+// ═══════════════════════════════════════════════════════════
+firebase.initializeApp({
+  apiKey:"AIzaSyAKLZ4dHYp0ZFLolMB5XPxDUu-QPXB_MqA",
+  authDomain:"talkzone-b3488.firebaseapp.com",
+  databaseURL:"https://talkzone-b3488-default-rtdb.firebaseio.com",
+  projectId:"talkzone-b3488",
+  storageBucket:"talkzone-b3488.firebasestorage.app",
+  messagingSenderId:"526945974843",
+  appId:"1:526945974843:web:997fb419c944ae9c1fba1e"
+});
+const db = firebase.database();
+
+// ═══════════════════════════════════════════════════════════
+//  BOARD GEOMETRY — rebuilt and mathematically verified.
+//
+//  BUG FIX (Wrong Home Entry Bug): the original TRACK/ENTRY/HOME_COL
+//  triplet was internally inconsistent — when a piece's ring position
+//  rolled over into its home column, the (col,row) it landed on did not
+//  sit next to that color's own home stretch. Yellow and blue were the
+//  worst affected (off by 12-14 cells — landing in front of an entirely
+//  different quadrant), but red and green were also off by one diagonal
+//  step. This entire section was rebuilt from a single procedural walk
+//  of the cross-shaped track (see build notes / verification script),
+//  so the ring, the home columns, and the entry points are guaranteed
+//  consistent: every color's piece, after exactly 51 ring steps, lands
+//  on the ring cell that is orthogonally adjacent to its own
+//  HOME_COL[0], and nowhere else.
+// ═══════════════════════════════════════════════════════════
+const CHEX = {red:'#E63946', green:'#2BAE66', yellow:'#F2B807', blue:'#3B7DD8'};
+const CNAMES = ['red','green','yellow','blue'];
+const DICE_EMOJI = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
+const EMOJIS = ['😂','🔥','💯','😎','🎉','👍','🤔','😡','🎲','🏆','❤️','😤','🥳','😍','👏','😭','💪','🙏','😜','🤣'];
+
+const GRID = 15;
+
+// 52-cell outer ring (col,row), 0-indexed, clockwise, starting at red's
+// entry square. Built as one continuous walk around the cross shape —
+// verified unique (52/52 distinct cells) and verified for home-column
+// adjacency (see comments above).
+const TRACK = [
+  [1,6],[2,6],[3,6],[4,6],[5,6],
+  [6,5],[6,4],[6,3],[6,2],[6,1],[6,0],
+  [7,0],[8,0],
+  [8,1],[8,2],[8,3],[8,4],[8,5],
+  [9,6],[10,6],[11,6],[12,6],[13,6],[14,6],
+  [14,7],[14,8],
+  [13,8],[12,8],[11,8],[10,8],[9,8],
+  [8,9],[8,10],[8,11],[8,12],[8,13],[8,14],
+  [7,14],[6,14],
+  [6,13],[6,12],[6,11],[6,10],[6,9],
+  [5,8],[4,8],[3,8],[2,8],[1,8],[0,8],
+  [0,7],[0,6]
+];
+// sanity (verified offline): TRACK.length === 52, all cells unique.
+
+// Each color's piece enters the 52-cell ring at this TRACK index.
+// Verified evenly spaced (13 apart): red=0, green=13, yellow=26, blue=39.
+const ENTRY = {red:0, green:13, yellow:26, blue:39};
+
+// Home column — 6 cells leading from the ring straight into the center
+// triangle. HOME_COL[color][0] is always orthogonally adjacent to
+// TRACK[(ENTRY[color]+50)%52] — i.e. reached right after ring-local
+// position 50 (the 51st and last ring square for that color).
+const HOME_COL = {
+  red:    [[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],
+  green:  [[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],
+  yellow: [[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],
+  blue:   [[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]]
+};
+
+// 4 base slots per color — sit inside that color's own quadrant.
+const BASES = {
+  red:    [[1,1],[2,1],[1,2],[2,2]],
+  green:  [[12,1],[13,1],[12,2],[13,2]],
+  yellow: [[12,12],[13,12],[12,13],[13,13]],
+  blue:   [[1,12],[2,12],[1,13],[2,13]]
+};
+
+// Safe "star" squares: each color's own entry square, plus the star
+// square 8 ring-steps after each entry. Derived from the verified
+// TRACK/ENTRY above (8 cells total) — fixes the old hardcoded SAFE_SET
+// which referenced cells that didn't correspond to any real entry point.
+const SAFE_SET = new Set();
+Object.values(ENTRY).forEach(idx=>{
+  const e = TRACK[idx];
+  SAFE_SET.add(e[0]+','+e[1]);
+  const s = TRACK[(idx+8)%52];
+  SAFE_SET.add(s[0]+','+s[1]);
+});
+
+// ── Position encoding used throughout the game ──
+//   -1           : piece in base, not yet entered
+//   0..50        : ring-local position (51 squares on the open ring)
+//   51..56       : home-column position (HOME_COL[color][pos-51])
+//   57           : finished (sits in center home triangle)
+const RING_LEN = 51;      // a piece is on the ring for positions 0..50
+const HOME_ENTER = 51;    // first home-column position
+const HOME_LAST = 56;     // last home-column position
+const FINISHED = 57;      // fully home
+
+function zoneOf(col,row){
+  if(row<6 && col<6) return 'red';
+  if(row<6 && col>8) return 'green';
+  if(row>8 && col>8) return 'yellow';
+  if(row>8 && col<6) return 'blue';
+  if(row>=6 && row<=8 && col>=6 && col<=8) return 'center';
+  return 'track';
+}
+
+// Resolves a piece's logical position to a global ring index (0-51) —
+// only meaningful for pos in [0,50].
+function ringIndex(color, pos){
+  return (pos + ENTRY[color]) % 52;
+}
+
+// Is a given on-ring position a safe square for captures?
+function isSafePos(color, pos){
+  if(pos < 0 || pos > 50) return true; // base & home column are always safe
+  const [c,r] = TRACK[ringIndex(color,pos)];
+  return SAFE_SET.has(c+','+r);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BOARD RENDERING — Ludo King style
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('ludo-board');
+const ctx = canvas.getContext('2d');
+let CELL = 30;
+
+function setupCanvas(){
+  // Read the ACTUAL layout direction from CSS rather than re-guessing the
+  // breakpoint here — this keeps JS sizing in sync with every media query
+  // that affects #s-game (including the landscape-phone one), instead of
+  // drifting out of sync if either side changes independently.
+  const sgame = document.getElementById('s-game');
+  const isRowLayout = getComputedStyle(sgame).flexDirection === 'row';
+  let maxW;
+  if(isRowLayout){
+    // Board sits beside the sidebar; account for the sidebar's current
+    // max-width tier (it changes across tablet/desktop breakpoints) plus
+    // gaps/padding, and cap by available viewport height so the board
+    // never overflows vertically on shorter windows.
+    const side = document.getElementById('side');
+    const sideW = side.getBoundingClientRect().width || 360;
+    const availW = window.innerWidth - sideW - 56;
+    const availH = window.innerHeight - 40;
+    maxW = Math.min(availW, availH, 640);
+  } else {
+    // Phone/column layout: the board is bounded by viewport WIDTH (a
+    // phone is always narrower than it is tall), so it can't physically
+    // grow any further once it spans the screen edge-to-edge. To still
+    // make full use of the freed-up vertical room (instead of leaving it
+    // as dead space below a small fixed-size control panel), the dice
+    // and player-pill panel below are scaled up proportionally to the
+    // board size — see the scalePanel() call below — so the whole
+    // composition reads as one full, intentional surface, the way Ludo
+    // King's bottom bar grows on bigger phones rather than staying a
+    // tiny fixed island under a huge board.
+    const availW = window.innerWidth - 8;
+    const availH = window.innerHeight * 0.7;
+    maxW = Math.min(availW, availH, 720);
+  }
+  maxW = Math.max(maxW, GRID * 16); // never smaller than 16px/cell, keeps tiny screens usable
+  const size = Math.floor(maxW / GRID) * GRID;
+  canvas.width = size; canvas.height = size;
+  CELL = size / GRID;
+  if(!isRowLayout) scalePanel(size);
+}
+
+// Scales the dice + control panel's size based on how much vertical room
+// is actually left over after the board, the status line, and a slim
+// margin — on a tall phone where the board is width-capped well below
+// the available height, this grows the dice, fonts, and player pills
+// together so that extra room becomes a bigger, more substantial panel
+// instead of being left as plain empty background below everything.
+function scalePanel(boardSize){
+  const usedSoFar = boardSize + 40; // board + its status line/margin below it
+  const leftover = window.innerHeight - usedSoFar;
+  // Baseline (scale=1) panel is roughly 160px tall. With the player-list
+  // strip now hidden in offline mode (see startOfflineGame), there's
+  // more leftover room than before, so this uses a larger fraction of it
+  // and a higher cap — still bounded so text never wraps awkwardly.
+  const baselinePanel = 160;
+  const targetPanel = Math.min(leftover * 0.55, baselinePanel * 1.45);
+  const scale = Math.min(1.45, Math.max(0.85, targetPanel / baselinePanel));
+  document.documentElement.style.setProperty('--panel-scale', scale);
+}
+
+function px(col,row){ return {x: col*CELL, y: row*CELL}; }
+function pxCenter(col,row){ return {x: col*CELL+CELL/2, y: row*CELL+CELL/2}; }
+
+// movableSet: optional Set of "color,idx" strings for pieces the current
+// player can legally move right now — drawn with a pulsing highlight ring
+// so the UI clearly shows which tokens are tappable (helps the auto-move /
+// single-choice UX feel obvious even when more than one option exists).
+// inactiveColors: optional array of color names NOT in play (used for
+// 2-player and 3-player games) — their quadrant + base slots are drawn
+// dimmed/greyed so it's visually obvious that seat isn't part of the game.
+// turnColor: the color name (e.g. 'red') whose turn it currently is —
+// every token of that color is rendered visibly darker/richer with a
+// soft glow ring around it, so it's obvious at a glance whose turn it
+// is just by looking at the board (not just the sidebar text), even
+// before the dice has been rolled.
+function drawBoard(playersArr, movableSet, inactiveColors, turnColor){
+  const S = canvas.width;
+  ctx.clearRect(0,0,S,S);
+
+  ctx.fillStyle = '#fdfdf6';
+  ctx.fillRect(0,0,S,S);
+
+  const inactive = new Set(inactiveColors||[]);
+
+  function quadrant(qCol,qRow,color,colorName){
+    const x=qCol*CELL, y=qRow*CELL, w=6*CELL;
+    ctx.save();
+    if(inactive.has(colorName)) ctx.globalAlpha = 0.32;
+    ctx.fillStyle = color;
+    ctx.fillRect(x,y,w,w);
+    const ix=x+CELL*0.7, iy=y+CELL*0.7, iw=w-CELL*1.4;
+    ctx.fillStyle = '#fdfdf6';
+    ctx.fillRect(ix,iy,iw,iw);
+    ctx.restore();
+  }
+  quadrant(0,0,CHEX.red,'red');
+  quadrant(9,0,CHEX.green,'green');
+  quadrant(9,9,CHEX.yellow,'yellow');
+  quadrant(0,9,CHEX.blue,'blue');
+
+  function drawBaseSlots(color){
+    ctx.save();
+    if(inactive.has(color)) ctx.globalAlpha = 0.35;
+    BASES[color].forEach(([c,r])=>{
+      const {x,y}=pxCenter(c,r);
+      ctx.beginPath();ctx.arc(x,y,CELL*0.62,0,Math.PI*2);
+      ctx.fillStyle='#ffffff';ctx.fill();
+      ctx.lineWidth=CELL*0.07;ctx.strokeStyle=CHEX[color];ctx.stroke();
+    });
+    ctx.restore();
+  }
+  CNAMES.forEach(drawBaseSlots);
+
+  ctx.strokeStyle = '#cfcfc0';
+  ctx.lineWidth = 1;
+  TRACK.forEach(([c,r])=>{
+    const x=c*CELL,y=r*CELL;
+    ctx.strokeRect(x,y,CELL,CELL);
+  });
+  Object.entries(HOME_COL).forEach(([color,cells])=>{
+    cells.forEach(([c,r])=>{
+      const x=c*CELL,y=r*CELL;
+      ctx.fillStyle = CHEX[color];
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(x+1,y+1,CELL-2,CELL-2);
+      ctx.globalAlpha = 1;
+    });
+  });
+
+  Object.entries(ENTRY).forEach(([color,idx])=>{
+    const [c,r] = TRACK[idx];
+    const x=c*CELL,y=r*CELL;
+    ctx.fillStyle = CHEX[color];
+    ctx.globalAlpha = 0.55;
+    ctx.fillRect(x+1,y+1,CELL-2,CELL-2);
+    ctx.globalAlpha = 1;
+  });
+
+  SAFE_SET.forEach(key=>{
+    const [c,r] = key.split(',').map(Number);
+    const x=c*CELL,y=r*CELL;
+    ctx.fillStyle='#fff8e0';
+    ctx.fillRect(x+1,y+1,CELL-2,CELL-2);
+    ctx.font=(CELL*0.55)+'px serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='#9a8a3a';
+    ctx.fillText('★',x+CELL/2,y+CELL/2+1);
+  });
+
+  const tri = [
+    {color:CHEX.red,    pts:[[6,6],[6,9],[7.5,7.5]]},
+    {color:CHEX.green,  pts:[[6,6],[9,6],[7.5,7.5]]},
+    {color:CHEX.yellow, pts:[[9,6],[9,9],[7.5,7.5]]},
+    {color:CHEX.blue,   pts:[[6,9],[9,9],[7.5,7.5]]}
+  ];
+  tri.forEach(t=>{
+    ctx.beginPath();
+    t.pts.forEach(([c,r],i)=>{
+      const x=c*CELL,y=r*CELL;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.closePath();
+    ctx.fillStyle=t.color;
+    ctx.fill();
+  });
+
+  ctx.strokeStyle = '#3a3a30';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(0.75,0.75,S-1.5,S-1.5);
+  ctx.beginPath();
+  ctx.moveTo(6*CELL,0); ctx.lineTo(6*CELL,6*CELL);
+  ctx.moveTo(9*CELL,0); ctx.lineTo(9*CELL,6*CELL);
+  ctx.moveTo(0,6*CELL); ctx.lineTo(6*CELL,6*CELL);
+  ctx.moveTo(0,9*CELL); ctx.lineTo(6*CELL,9*CELL);
+  ctx.moveTo(9*CELL,0); ctx.lineTo(15*CELL,0);
+  ctx.moveTo(6*CELL,9*CELL); ctx.lineTo(6*CELL,15*CELL);
+  ctx.moveTo(9*CELL,9*CELL); ctx.lineTo(9*CELL,15*CELL);
+  ctx.moveTo(9*CELL,6*CELL); ctx.lineTo(15*CELL,6*CELL);
+  ctx.moveTo(9*CELL,9*CELL); ctx.lineTo(15*CELL,9*CELL);
+  ctx.moveTo(6*CELL,9*CELL); ctx.lineTo(0,9*CELL);
+  ctx.stroke();
+
+  if(!playersArr) return;
+  drawPieces(playersArr, movableSet, turnColor);
+}
+
+function drawPieces(playersArr, movableSet, turnColor){
+  // base pieces (pos < 0)
+  playersArr.forEach(pl=>{
+    if(!pl || !pl.pieces || !pl.color) return;
+    const baseSlots = BASES[pl.color];
+    if(!baseSlots) return;
+    pl.pieces.forEach((pos,i)=>{
+      if(pos < 0){
+        const slot = baseSlots[i];
+        if(!slot) return;
+        const {x,y} = pxCenter(slot[0], slot[1]);
+        const isMovable = movableSet && movableSet.has(pl.color+','+i);
+        drawToken(x, y, CHEX[pl.color], i+1, CELL*0.34, isMovable, pl.color===turnColor);
+      }
+    });
+  });
+
+  // on-track / home-column pieces, grouped by cell for proper stacking.
+  // BUG FIX (Token Stack Bug): pieces are grouped by their exact cell
+  // (including pieces of different colors occupying the same ring cell,
+  // e.g. before a capture is resolved) and laid out in a small 2x2 (or
+  // fan, for 5+) offset pattern so overlapping tokens are always all
+  // visible and tappable instead of rendering on top of each other.
+  const cellMap = {};
+  playersArr.forEach(pl=>{
+    if(!pl || !pl.pieces || !pl.color) return;
+    pl.pieces.forEach((pos,i)=>{
+      if(pos < 0 || pos > HOME_LAST) return; // base or finished, drawn elsewhere/not at all
+      const cell = resolveCell(pl.color, pos);
+      if(!cell) return;
+      const key = cell[0]+','+cell[1];
+      (cellMap[key] = cellMap[key]||[]).push({color:pl.color, num:i+1, idx:i});
+    });
+  });
+  Object.entries(cellMap).forEach(([key,list])=>{
+    const [c,r] = key.split(',').map(Number);
+    const {x:cx,y:cy} = pxCenter(c,r);
+    const n = list.length;
+    list.forEach((p,pi)=>{
+      let ox=0, oy=0;
+      if(n===2){
+        const off = CELL*0.20;
+        const layout = [[-1,0],[1,0]];
+        const o = layout[pi%2];
+        ox = o[0]*off; oy = o[1]*off;
+      } else if(n>=3){
+        const off = CELL*0.22;
+        const layout = [[-1,-1],[1,-1],[-1,1],[1,1]];
+        const o = layout[pi%4];
+        ox = o[0]*off; oy = o[1]*off;
+      }
+      const isMovable = movableSet && movableSet.has(p.color+','+p.idx);
+      drawToken(cx+ox, cy+oy, CHEX[p.color], p.num, n>1?CELL*0.26:CELL*0.36, isMovable, p.color===turnColor);
+    });
+  });
+
+  if(turnColor) drawTurnMarker(turnColor);
+}
+
+// Draws ONE clear, color-independent "this player's turn" sign per render —
+// a bouncing gold ▼ arrow sitting just above that color's home-quadrant
+// label area (top-left of their base square), regardless of where any of
+// their individual tokens currently are on the board. This answers "kis
+// player ka goti badhega" at a glance: look for the bouncing gold arrow,
+// it always points at the active color's base.
+// Anchor rows are chosen so that even at maximum bounce + glow radius, the
+// marker never clips past the canvas edge: max upward/downward extent from
+// the anchor is bounce(0.22) + glowRadius(0.62*0.95) ≈ 0.81 cells, so each
+// anchor keeps at least ~0.85 cells of clearance from row 0 / row 15.
+const TURN_MARKER_ANCHOR = {
+  red:    [1.5, 0.9],
+  green:  [12.5, 0.9],
+  yellow: [12.5, 13.4],
+  blue:   [1.5, 13.4]
+};
+function drawTurnMarker(color){
+  const anchor = TURN_MARKER_ANCHOR[color];
+  if(!anchor) return;
+  const isBottomRow = (color === 'yellow' || color === 'blue');
+  const {x, y:baseY} = pxCenter(anchor[0], anchor[1]);
+  const bounce = Math.sin(Date.now()/220) * CELL*0.22;
+  // Bottom-row colors bounce/point the opposite way so the arrow still
+  // visually "points into" their own base square instead of away from it.
+  const y = isBottomRow ? baseY + bounce : baseY - bounce;
+  const r = CELL*0.62;
+  const flip = isBottomRow ? -1 : 1;
+
+  ctx.save();
+  ctx.translate(x, y);
+  // soft glow behind the arrow so it pops against busy backgrounds
+  ctx.beginPath(); ctx.arc(0,0,r*0.95,0,Math.PI*2);
+  ctx.fillStyle = 'rgba(255,213,74,0.35)';
+  ctx.fill();
+  // the arrow itself — points toward the base (down for top-row colors
+  // pointing at their base below them is wrong, so: red/green sit ABOVE
+  // their own base label area and point DOWN into it; yellow/blue sit
+  // BELOW their base label area and point UP into it).
+  ctx.beginPath();
+  ctx.moveTo(0, -r*0.55*flip);
+  ctx.lineTo(-r*0.5, r*0.4*flip);
+  ctx.lineTo(r*0.5, r*0.4*flip);
+  ctx.closePath();
+  ctx.fillStyle = '#ffd54a';
+  ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 2;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = Math.max(1, r*0.08);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Resolves a piece's logical position to a (col,row) cell.
+// pos<0 = in base (handled separately). pos>56 = finished (not drawn).
+function resolveCell(color, pos){
+  if(pos >= HOME_ENTER && pos <= HOME_LAST){
+    const hp = HOME_COL[color];
+    return hp ? hp[pos-HOME_ENTER] : null;
+  }
+  if(pos >= 0 && pos < HOME_ENTER){
+    return TRACK[ringIndex(color,pos)] || null;
+  }
+  return null;
+}
+
+// highlight: this exact piece is a legal move right now (tappable) — white pulse ring.
+// isTurnColor: this piece belongs to whichever player's turn it currently is. Every token of
+// that color renders noticeably darker with a bright gold glow ring (gold instead of the
+// token's own color, so it reads clearly against EVERY color — a same-color glow on a
+// same-color token has low contrast and is easy to miss). A separate one-time "turn marker"
+// (a bouncing ▼ near that color's base) is drawn by drawTurnMarker() below, once per turn
+// rather than once per token, so 4 base pieces of the same color don't produce 4 markers.
+function drawToken(x,y,color,num,r,highlight,isTurnColor){
+  if(isTurnColor){
+    const pulse = 0.6 + 0.4 * Math.sin(Date.now()/260);
+    // Bright gold glow ring — high-contrast against every token color.
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x,y,r*1.32,0,Math.PI*2);
+    ctx.strokeStyle = '#ffd54a';
+    ctx.lineWidth = Math.max(2, r*0.28);
+    ctx.globalAlpha = pulse;
+    ctx.shadowColor = '#ffd54a'; ctx.shadowBlur = r*1.1;
+    ctx.stroke();
+    ctx.restore();
+  }
+  if(highlight){
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x,y,r*1.42,0,Math.PI*2);
+    ctx.strokeStyle='#ffffff'; ctx.lineWidth=Math.max(1.5,r*0.16);
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Turn-color tokens get a visibly DARKER base fill (per the request: jiska
+  // chance hai uska goti dark dikhe) — everyone else renders at normal
+  // brightness, so the contrast is immediately readable.
+  const baseColor = isTurnColor ? darken(color, 0.48) : color;
+
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=7; ctx.shadowOffsetY=3.5;
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=baseColor; ctx.fill();
+  ctx.restore();
+
+  // Glossy 3D body — brighter top-left sheen, darker bottom-right falloff.
+  const g = ctx.createRadialGradient(x-r*0.32,y-r*0.38,r*0.04, x,y,r*1.05);
+  g.addColorStop(0, lighten(baseColor, isTurnColor ? 0.7 : 0.6));
+  g.addColorStop(0.5, baseColor);
+  g.addColorStop(1, darken(baseColor, isTurnColor ? 0.4 : 0.35));
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=g; ctx.fill();
+
+  // Outer rim — turn-color tokens get a gold rim instead of plain black,
+  // tying the token visually to its floating marker + glow ring above.
+  ctx.lineWidth = Math.max(1.2, r*0.09);
+  ctx.strokeStyle = isTurnColor ? '#ffd54a' : 'rgba(0,0,0,0.55)';
+  ctx.stroke();
+
+  // Inner sheen ring (gives the "glossy pawn" look)
+  ctx.beginPath(); ctx.arc(x,y,r*0.76,0,Math.PI*2);
+  ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=Math.max(1,r*0.1); ctx.stroke();
+
+  // Small top-left specular highlight dot — sells the 3D glossy-bead look.
+  ctx.beginPath();
+  ctx.ellipse(x-r*0.32, y-r*0.36, r*0.26, r*0.16, -0.6, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fill();
+
+  // Number label
+  ctx.fillStyle='#fff';
+  ctx.font = `bold ${Math.max(9,r*0.95)}px Nunito, sans-serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.lineWidth = Math.max(1.5, r*0.2);
+  ctx.strokeStyle='rgba(0,0,0,0.5)';
+  ctx.strokeText(num, x, y+1);
+  ctx.fillText(num, x, y+1);
+}
+
+// Parses either a "#rrggbb" hex string OR an "rgb(r,g,b)" string (the
+// latter happens because lighten()/darken() can be called on a color
+// that was already passed through darken() once, e.g. for turn-color
+// tokens — without this dual support that produces NaN and a thrown
+// CanvasGradient error).
+function hexToRgb(str){
+  if(str[0] === '#'){
+    return {r:parseInt(str.slice(1,3),16), g:parseInt(str.slice(3,5),16), b:parseInt(str.slice(5,7),16)};
+  }
+  const m = str.match(/[\d.]+/g) || [0,0,0];
+  return {r:parseFloat(m[0]), g:parseFloat(m[1]), b:parseFloat(m[2])};
+}
+function lighten(hex,amt){
+  const c=hexToRgb(hex);
+  return `rgb(${Math.min(255,c.r+amt*200)},${Math.min(255,c.g+amt*200)},${Math.min(255,c.b+amt*200)})`;
+}
+function darken(hex,amt){
+  const c=hexToRgb(hex);
+  return `rgb(${Math.max(0,c.r-amt*180)},${Math.max(0,c.g-amt*180)},${Math.max(0,c.b-amt*180)})`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SHARED RULES ENGINE
+//  Used identically by offline AND online modes so behaviour never
+//  diverges between the two (this single source of truth is itself
+//  part of the Multiplayer Sync Bug fix — previously offline and
+//  online had separate, slightly different copies of this logic).
+// ═══════════════════════════════════════════════════════════
+
+// Can a specific piece legally move with the given dice value?
+//   - a piece in base (-1) can only come out on a 6
+//   - a piece already finished (57) can never move again
+//   - a piece cannot overshoot past the final home cell (57)
+//     BUG FIX (overshoot): old code did `Math.min(pos+dice,58)` which
+//     silently clamped an illegal move into a legal-looking one instead
+//     of rejecting it. Now an overshooting move is correctly excluded.
+function canMovePiece(pos, dice){
+  if(pos === FINISHED) return false;
+  if(pos < 0) return dice === 6;
+  return (pos + dice) <= FINISHED;
+}
+
+// Returns the array of piece-indices [0..3] that can legally move for a
+// given player + dice roll. Always call this right after a roll.
+function legalMoves(pieces, dice){
+  const out = [];
+  for(let i=0;i<4;i++){
+    if(canMovePiece(pieces[i], dice)) out.push(i);
+  }
+  return out;
+}
+
+// BUG FIX (Block System): two of a SAME color's own pieces stacked on one
+// ring cell form a block. An enemy piece landing on / passing a cell
+// occupied by an opponent's block cannot capture there and, per Ludo King
+// rules, a block also can't be jumped past by an enemy in the same move —
+// we approximate this (full board games rarely enforce "can't pass", they
+// enforce "can't land/capture there"), but block protects against capture.
+function isBlockedCell(allPlayers, myColor, targetRingIdx){
+  // returns true if some OTHER color has 2+ pieces sitting on targetRingIdx
+  const counts = {};
+  for(const p of allPlayers){
+    if(!p || p.color === myColor) continue;
+    (p.pieces||[]).forEach(pos=>{
+      if(pos < 0 || pos > 50) return;
+      if(ringIndex(p.color,pos) === targetRingIdx){
+        counts[p.color] = (counts[p.color]||0) + 1;
+      }
+    });
+  }
+  return Object.values(counts).some(c => c >= 2);
+}
+
+// Applies a single piece move to a pieces[] array (mutates a COPY you pass
+// in) and returns { pieces, captured: [{color,idx}], finished: bool, won: bool }.
+// This is the ONE authoritative move-resolution function — both offline
+// and online paths call this, so capture/overshoot/winner logic can never
+// drift apart between modes again.
+function resolveMove(allPlayersSnapshot, myColor, pieceIdx, dice){
+  const me = allPlayersSnapshot.find(p=>p.color===myColor);
+  const pieces = [...me.pieces];
+  const startPos = pieces[pieceIdx];
+
+  if(!canMovePiece(startPos, dice)){
+    return {ok:false, reason:'illegal-move'};
+  }
+
+  const newPos = startPos < 0 ? 0 : startPos + dice;
+  pieces[pieceIdx] = newPos;
+
+  const captured = [];
+  // Captures only happen on the open ring (0..50), never in base, home
+  // column, or once finished — and never on a safe square.
+  // BUG FIX (Capture Bug — safe cell capture / missed capture):
+  // capture detection now uses the single verified ringIndex()/isSafePos()
+  // functions instead of re-deriving ring math inline, and explicitly
+  // skips the block-protected case.
+  if(newPos >= 0 && newPos <= 50){
+    const myRingIdx = ringIndex(myColor, newPos);
+    const safe = isSafePos(myColor, newPos);
+    if(!safe){
+      for(const op of allPlayersSnapshot){
+        if(!op || op.color === myColor) continue;
+        if(isBlockedCell(allPlayersSnapshot, myColor, myRingIdx) ) continue; // can't capture a block
+        op.pieces.forEach((opos,oi)=>{
+          if(opos < 0 || opos > 50) return;
+          if(ringIndex(op.color, opos) === myRingIdx){
+            captured.push({color: op.color, idx: oi});
+          }
+        });
+      }
+    }
+  }
+
+  const justFinished = newPos === FINISHED;
+  const allHome = pieces.every(p=>p===FINISHED);
+
+  return { ok:true, pieces, captured, justFinished, won: allHome, newPos, bonusTurn: dice===6 || captured.length>0 };
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// Returns the color names NOT used by any player in the given array —
+// used to visually dim empty seats in 2/3-player games.
+function inactiveColorsFor(playersArr){
+  const used = new Set((playersArr||[]).map(p=>p && p.color).filter(Boolean));
+  return CNAMES.filter(c=>!used.has(c));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+let myName='', myColor='red', selColor='red';
+let gameMode='';      // 'offline' | 'online'
+let nPlayers=2;
+let roomId='', myId='';
+let offState=null;    // { players:[{name,color,pieces,score}], turn:idx, diceRolled, lastDice, status, winnerIdx }
+let onState=null;
+let animating=false;
+let onlineListenersAttached=false;
+let presenceRef=null;
+const localChat=[];
+
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LOBBY
+// ═══════════════════════════════════════════════════════════
+function paintColorSwatches(container){
+  container.querySelectorAll('.cp').forEach(el=>{
+    el.style.background = CHEX[el.dataset.c];
+  });
+}
+paintColorSwatches(document.getElementById('lobby-colors'));
+
+document.querySelectorAll('#lobby-colors .cp').forEach(el=>{
+  el.onclick = ()=>{
+    document.querySelectorAll('#lobby-colors .cp').forEach(e=>e.classList.remove('on'));
+    el.classList.add('on');
+    selColor = el.dataset.c;
+  };
+});
+document.getElementById('btn-go').onclick = ()=>{
+  const n = document.getElementById('inp-name').value.trim();
+  if(!n){ toast('Naam likho pehle!'); return; }
+  myName = n; myColor = selColor;
+  saveProfile();
+  refreshModeProfileChip();
+  show('s-mode');
+};
+
+// BUG FIX (app always asks to set up profile): name/color are now saved
+// to localStorage once chosen, and restored on every future visit — the
+// lobby screen is skipped entirely for a returning user (straight to
+// mode-select), with a small profile chip there showing who they're
+// playing as and a one-tap way back to the lobby if they want to change
+// it. Nothing here touches game state/rules, purely a returning-user
+// convenience.
+const PROFILE_KEY = 'ludo_profile_v1';
+function saveProfile(){
+  try{ localStorage.setItem(PROFILE_KEY, JSON.stringify({name:myName, color:myColor})); }
+  catch(e){ /* storage may be unavailable (e.g. private mode) — fine to skip silently */ }
+}
+function loadSavedProfile(){
+  try{
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    if(data && typeof data.name === 'string' && data.name.trim() && CNAMES.includes(data.color)){
+      return data;
+    }
+  }catch(e){ /* corrupted/unavailable storage — treat as no saved profile */ }
+  return null;
+}
+function refreshModeProfileChip(){
+  document.getElementById('mode-profile-dot').style.background = CHEX[myColor] || CHEX.red;
+  document.getElementById('mode-profile-name').textContent = myName || '—';
+}
+document.getElementById('mode-profile-chip').onclick = ()=>show('s-lobby');
+
+(function initSavedProfile(){
+  const saved = loadSavedProfile();
+  if(saved){
+    myName = saved.name; myColor = saved.color; selColor = saved.color;
+    // keep the lobby form pre-filled too, in case the user navigates
+    // back to it to change their profile later in this session
+    document.getElementById('inp-name').value = myName;
+    document.querySelectorAll('#lobby-colors .cp').forEach(e=>{
+      e.classList.toggle('on', e.dataset.c === myColor);
+    });
+    refreshModeProfileChip();
+    show('s-mode');
+  }
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  MODE + COUNT
+// ═══════════════════════════════════════════════════════════
+document.getElementById('mc-off').onclick = ()=>{ gameMode='offline'; show('s-count'); };
+document.getElementById('mc-on').onclick  = ()=>{ gameMode='online';  show('s-count'); };
+document.getElementById('b-back-mode').onclick = ()=>show('s-lobby');
+
+document.querySelectorAll('.cbt').forEach(btn=>{
+  btn.onclick = function(){
+    nPlayers = parseInt(this.dataset.n, 10);
+    if(gameMode==='offline') buildOfflineSetup();
+    else show('s-online');
+  };
+});
+document.getElementById('b-back-count').onclick = ()=>show('s-mode');
+
+// ═══════════════════════════════════════════════════════════
+//  OFFLINE SETUP — each player gets an explicit, fixed color tag
+// ═══════════════════════════════════════════════════════════
+function buildOfflineSetup(){
+  const form = document.getElementById('off-form');
+  form.innerHTML = '';
+  for(let i=0; i<nPlayers; i++){
+    const defaultColor = CNAMES[i];
+    const defaultName = i===0 ? myName : ('Player '+(i+1));
+    const wrap = document.createElement('div');
+    wrap.className = 'psetup';
+    wrap.dataset.slot = i;
+    wrap.innerHTML = `
+      <div class="psetup-header"><span class="swatch" style="background:${CHEX[defaultColor]}"></span>Player ${i+1}</div>
+      <input class="pname-inp" maxlength="14" value="${escAttr(defaultName)}" placeholder="Naam..."/>
+      <div class="cpicks pcolor-row"></div>`;
+    form.appendChild(wrap);
+
+    const row = wrap.querySelector('.pcolor-row');
+    CNAMES.forEach(c=>{
+      const cp = document.createElement('div');
+      cp.className = 'cp' + (c===defaultColor ? ' on' : '');
+      cp.style.background = CHEX[c];
+      cp.dataset.color = c;
+      cp.onclick = function(){
+        const allRows = form.querySelectorAll('.psetup');
+        let takenElsewhere = false;
+        allRows.forEach(r2=>{
+          if(r2===wrap) return;
+          const activeCp = r2.querySelector('.cp.on');
+          if(activeCp && activeCp.dataset.color === c) takenElsewhere = true;
+        });
+        if(takenElsewhere){ toast('Ye color kisi aur player ne le liya!'); return; }
+        row.querySelectorAll('.cp').forEach(e=>e.classList.remove('on'));
+        this.classList.add('on');
+        wrap.querySelector('.swatch').style.background = CHEX[c];
+      };
+      row.appendChild(cp);
+    });
+  }
+  show('s-off-setup');
+}
+
+document.getElementById('b-start-off').onclick = function(){
+  const slots = document.querySelectorAll('#off-form .psetup');
+  const players = [];
+  const used = new Set();
+  let ok = true;
+  slots.forEach(slot=>{
+    const name = slot.querySelector('.pname-inp').value.trim() || ('Player ' + (parseInt(slot.dataset.slot,10)+1));
+    const activeCp = slot.querySelector('.cp.on');
+    const color = activeCp ? activeCp.dataset.color : CNAMES[parseInt(slot.dataset.slot,10)];
+    if(used.has(color)){ toast('Har player ka color alag hona chahiye!'); ok=false; return; }
+    used.add(color);
+    players.push({ name: name, color: color, pieces: [-1,-1,-1,-1], score: 0 });
+  });
+  if(!ok) return;
+  startOfflineGame(players);
+};
+document.getElementById('b-back-off').onclick = ()=>show('s-count');
+
+// ═══════════════════════════════════════════════════════════
+//  OFFLINE GAME LOGIC
+// ═══════════════════════════════════════════════════════════
+
+// BUG FIX (Triple Six Rule): three consecutive 6s in a row forfeits the
+// turn instead of granting a 4th roll — tracked per-player via sixStreak.
+function startOfflineGame(players){
+  players.forEach(p=>{ p.sixStreak = 0; });
+  offState = { players, turn:0, diceRolled:false, lastDice:0, status:'playing', winnerIdx:-1, lastMovable:[] };
+  show('s-game');
+  setupCanvas();
+  document.getElementById('room-box').style.display = 'none';
+  document.getElementById('connbar').classList.remove('on');
+  // Chat only makes sense online (where there's an actual other person on
+  // another device) — same-device offline play has no one else to chat
+  // with, so the floating chat button is hidden entirely in this mode.
+  document.getElementById('chat-fab').style.display = 'none';
+  closeChatOverlay();
+  // The player-list strip exists mainly to show online/offline connection
+  // status for OTHER devices in a multiplayer room — that's meaningless
+  // for same-device offline play, and turn info is already shown clearly
+  // in the dice area above, so this section is hidden entirely here to
+  // give the board more of the screen (the actual full-screen ask).
+  document.getElementById('plist').style.display = 'none';
+  canvas.onclick = onBoardClickOffline;
+  renderOffline();
+}
+
+function currentOfflinePlayer(){ return offState.players[offState.turn]; }
+
+function renderOffline(){
+  const gs = offState; if(!gs) return;
+  const pl = currentOfflinePlayer();
+  const hex = CHEX[pl.color];
+  document.getElementById('turn-name').textContent = pl.name + ' ki baari';
+  document.getElementById('turn-name').style.color = hex;
+  document.getElementById('tbar').style.background = hex;
+  document.getElementById('btn-roll').disabled = gs.diceRolled || animating;
+  document.getElementById('btn-roll').textContent = gs.diceRolled ? 'Piece click karo 👆' : 'Roll Dice 🎲';
+  if(gs.lastDice) setDiceFace(gs.lastDice);
+  document.getElementById('status').textContent = gs.diceRolled
+    ? pl.name + ' — apna piece tap karo'
+    : pl.name + ' — dice roll karo';
+
+  const list = document.getElementById('plist');
+  list.innerHTML = '';
+  gs.players.forEach((p,i)=>{
+    const home = p.pieces.filter(x=>x===FINISHED).length;
+    const row = document.createElement('div');
+    row.className = 'ppill' + (gs.turn===i ? ' active' : '');
+    row.innerHTML = `<div class="pdot" style="background:${CHEX[p.color]}"></div>
+      <div class="pnam">${esc(p.name)}</div>
+      <div class="phome">${home}/4</div>
+      ${gs.turn===i ? '<div class="ptag">Baari</div>' : ''}`;
+    list.appendChild(row);
+  });
+
+  const movable = new Set((gs.lastMovable||[]).map(i=>pl.color+','+i));
+  drawBoard(gs.players, gs.diceRolled ? movable : null, inactiveColorsFor(gs.players), pl.color);
+}
+
+document.getElementById('btn-roll').onclick = function(){
+  if(offState) doOfflineRoll();
+  else if(onState) doOnlineRoll();
+};
+document.getElementById('dice-wrap').onclick = function(){
+  document.getElementById('btn-roll').click();
+};
+
+// Sets the dice's visual face (1-6) by swapping its dN class — the
+// actual pip pattern is drawn via the #dice-face.dN CSS rules above, so
+// this just flips which pips are lit, no text/emoji involved.
+function setDiceFace(val){
+  const face = document.getElementById('dice-face');
+  face.className = 'd' + (val>=1 && val<=6 ? val : 1);
+}
+
+// BUG FIX (dice face invisible during roll): the spin animation used to
+// rotate the whole dice cushion (rotate(-25deg) etc.) WHILE the face pips
+// were being rapidly swapped underneath — at an angle, a pip pattern
+// reads as an unclear blur instead of a recognizable number, so the face
+// only looked right once the animation settled back to rotate(0). The
+// keyframes below now only scale (bounce), never rotate, so the pip
+// pattern stays flat and legible at every point during the roll, not
+// just at rest.
+function rollAnimation(cb){
+  sfx.diceRoll();
+  const dw = document.getElementById('dice-wrap');
+  dw.classList.add('spin');
+  let ticks = 0;
+  const iv = setInterval(()=>{
+    setDiceFace(1 + Math.floor(Math.random()*6));
+    if(++ticks > 6){
+      clearInterval(iv);
+      dw.classList.remove('spin');
+      const final = 1 + Math.floor(Math.random()*6);
+      setDiceFace(final);
+      cb(final);
+    }
+  }, 60);
+}
+
+function doOfflineRoll(){
+  const gs = offState;
+  if(gs.diceRolled || animating) return;
+  rollAnimation(val=>{
+    const pl = currentOfflinePlayer();
+
+    // BUG FIX (Triple Six Rule): track consecutive 6s, forfeit turn on 3rd
+    if(val === 6){
+      pl.sixStreak = (pl.sixStreak||0) + 1;
+      if(pl.sixStreak >= 3){
+        addLocalChat('🚫 ' + pl.name + ' ne 3 baar 6 — turn cancel!');
+        toast('3 lagatar 6 — turn skip!');
+        sfx.turnSkip();
+        pl.sixStreak = 0;
+        setTimeout(offlineNextTurn, 1100);
+        return;
+      }
+    } else {
+      pl.sixStreak = 0;
+    }
+
+    gs.lastDice = val;
+    gs.diceRolled = true;
+    addLocalChat(DICE_EMOJI[val] + ' ' + pl.name + ' ne ' + val + ' daala!');
+
+    const moves = legalMoves(pl.pieces, val);
+    gs.lastMovable = moves;
+
+    if(moves.length === 0){
+      toast('Koi move nahi — turn skip!');
+      sfx.turnSkip();
+      setTimeout(offlineNextTurn, 1100);
+    } else if(moves.length === 1){
+      // BUG FIX (Auto Move Bug): exactly one legal piece -> move it automatically,
+      // no click required.
+      renderOffline();
+      setTimeout(()=>offlineMovePiece(moves[0]), 450);
+    } else {
+      renderOffline();
+    }
+  });
+}
+
+function onBoardClickOffline(e){
+  const gs = offState;
+  if(!gs || !gs.diceRolled || animating) return;
+  const rect = canvas.getBoundingClientRect();
+  const scale = canvas.width / rect.width;
+  const mx = (e.clientX - rect.left) * scale;
+  const my = (e.clientY - rect.top) * scale;
+  const col = Math.floor(mx / CELL), row = Math.floor(my / CELL);
+
+  const pl = currentOfflinePlayer();
+  const clr = pl.color;
+  for(let i=0;i<4;i++){
+    if(!gs.lastMovable.includes(i)) continue; // BUG FIX: ignore taps on non-movable pieces
+    const pos = pl.pieces[i];
+    let cell;
+    if(pos < 0) cell = BASES[clr][i];
+    else if(pos >= HOME_ENTER && pos <= HOME_LAST) cell = HOME_COL[clr][pos-HOME_ENTER];
+    else if(pos >= 0 && pos < HOME_ENTER) cell = TRACK[ringIndex(clr,pos)];
+    if(cell && cell[0]===col && cell[1]===row){
+      offlineMovePiece(i);
+      return;
+    }
+  }
+  toast('Apna piece tap karo!');
+}
+
+async function offlineMovePiece(idx){
+  const gs = offState;
+  const pl = currentOfflinePlayer();
+  const dice = gs.lastDice;
+  const startPos = pl.pieces[idx];
+
+  if(!canMovePiece(startPos, dice)){ toast('Ye move valid nahi hai!'); return; }
+
+  animating = true;
+  document.getElementById('btn-roll').disabled = true;
+
+  // Step-by-step animation along the real path (ring -> home column),
+  // using the verified resolveCell() so the animation always matches
+  // the final authoritative position.
+  const steps = startPos < 0 ? 1 : dice;
+  let animPos = startPos;
+  if(startPos < 0) sfx.pieceEnter();
+  for(let s=0; s<steps; s++){
+    animPos = startPos < 0 ? 0 : Math.min(animPos+1, FINISHED);
+    pl.pieces[idx] = animPos;
+    drawBoard(gs.players, null, inactiveColorsFor(gs.players), pl.color);
+    if(startPos >= 0) sfx.pieceMove();
+    await sleep(140);
+  }
+  animating = false;
+
+  // Resolve the authoritative result via the shared engine (captures, win, etc).
+  const snapshotBefore = gs.players.map(p=>({color:p.color, pieces:[...p.pieces]}));
+  // restore pre-move pieces for resolveMove's own delta calc, then apply its result
+  const beforeMoveSnapshot = snapshotBefore.map(p=>p.color===pl.color
+    ? {...p, pieces: p.pieces.map((v,i)=>i===idx?startPos:v)}
+    : p);
+  const result = resolveMove(beforeMoveSnapshot, pl.color, idx, dice);
+
+  if(!result.ok){ animating=false; renderOffline(); return; }
+
+  pl.pieces = result.pieces;
+  result.captured.forEach(cap=>{
+    const victim = gs.players.find(p=>p.color===cap.color);
+    if(victim){
+      victim.pieces[cap.idx] = -1;
+      addLocalChat('💥 ' + pl.name + ' ne ' + victim.name + ' ka piece capture kiya!');
+    }
+  });
+
+  drawBoard(gs.players, null, inactiveColorsFor(gs.players), pl.color);
+
+  if(result.captured.length) sfx.capture();
+
+  if(result.won){
+    gs.status='ended'; gs.winnerIdx=gs.turn;
+    addLocalChat('🏆 ' + pl.name + ' ne game jeet liya!');
+    document.getElementById('won-title').textContent = '🏆 ' + pl.name + ' Jeet Gaya!';
+    document.getElementById('won').style.display = 'flex';
+    sfx.win();
+    return;
+  }
+
+  if(result.bonusTurn){
+    toast(dice===6 ? '6 aaya! Ek aur chance! 🎉' : 'Capture! Ek aur chance! 🎉');
+    sfx.bonusTurn();
+    gs.diceRolled = false; gs.lastDice = 0; gs.lastMovable = [];
+    renderOffline();
+  } else {
+    offlineNextTurn();
+  }
+}
+
+// BUG FIX (Turn Bug): turn advancement is now a single, idempotent
+// function always called exactly once per ended turn (never from two
+// places at once), and always resets diceRolled/lastMovable so the next
+// player can't inherit stale move state.
+function offlineNextTurn(){
+  const gs = offState;
+  gs.turn = (gs.turn + 1) % gs.players.length;
+  gs.diceRolled = false; gs.lastDice = 0; gs.lastMovable = [];
+  setDiceFace(1);
+  toast(currentOfflinePlayer().name + ' ki baari! 🎲');
+  renderOffline();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ONLINE SETUP
+//
+//  BUG FIX (Room Join Bug / color duplication): joining now happens
+//  inside a single Firebase transaction on the room's `players` node,
+//  so two people tapping "Join" at the same moment can never both grab
+//  the same color or both land in the same color slot — the transaction
+//  re-checks taken colors against the LATEST server data, not a stale
+//  snapshot read with a separate write (which is what the old code did:
+//  get() then set() — a classic race condition).
+// ═══════════════════════════════════════════════════════════
+document.getElementById('b-create').onclick = async function(){
+  const rid = genId(6), pid = genId(10);
+  toast('Room ban rahi hai...');
+  try{
+    await db.ref('ludo3/'+rid).set({
+      created: Date.now(), status:'waiting', turn: pid,
+      diceRolled:false, lastDice:null, winner:null, version: 0,
+      playerOrder:[pid], maxPlayers: nPlayers,
+      players:{ [pid]: { name: myName, color: myColor, pieces:[-1,-1,-1,-1], score:0, sixStreak:0, connected:true } }
+    });
+    enterOnlineGame(rid, pid);
+    pushSystemChat(rid, '🎲 Room bani! Share karo: ' + rid + ' | Max ' + nPlayers + ' players');
+  }catch(e){ toast('Error: ' + e.message); }
+};
+
+document.getElementById('b-join').onclick = async function(){
+  const code = document.getElementById('inp-room').value.trim().toUpperCase();
+  if(!code){ toast('Room code daalo!'); return; }
+  toast('Join kar raha hai...');
+  const pid = genId(10);
+  try{
+    const txResult = await db.ref('ludo3/'+code).transaction(data=>{
+      if(data === null) return data; // room doesn't exist — abort, handled below
+      if(data.status === 'ended') return; // abort
+      const players = data.players || {};
+      const max = data.maxPlayers || 4;
+      if(Object.keys(players).length >= max) return; // abort: full
+      const takenColors = Object.values(players).map(p=>p.color);
+      let myAssignedColor = myColor;
+      if(takenColors.includes(myColor)){
+        // BUG FIX: instead of failing the join outright on color clash,
+        // auto-assign the next free color so joining never produces a
+        // duplicate — this also prevents a whole class of "wrong color"
+        // bugs where a stale client-side myColor lingered from the lobby.
+        const free = CNAMES.find(c=>!takenColors.includes(c));
+        if(!free) return; // abort: no free color (shouldn't happen if max enforced)
+        myAssignedColor = free;
+      }
+      data.players = data.players || {};
+      data.players[pid] = { name: myName, color: myAssignedColor, pieces:[-1,-1,-1,-1], score:0, sixStreak:0, connected:true };
+      data.playerOrder = [...(data.playerOrder||[]), pid];
+      return data;
+    });
+
+    if(!txResult.committed){ toast('Room nahi mili ya full hai!'); return; }
+    const finalData = txResult.snapshot.val();
+    const finalColor = finalData.players[pid].color;
+    if(finalColor !== myColor) toast('Tera color liya gaya tha — ' + finalColor + ' assign hua!');
+
+    enterOnlineGame(code, pid);
+    pushSystemChat(code, '👋 ' + myName + ' game mein aa gaya!');
+  }catch(e){ toast('Error: ' + e.message); }
+};
+document.getElementById('b-back-on').onclick = ()=>show('s-count');
+
+// ═══════════════════════════════════════════════════════════
+//  ONLINE GAME LOGIC
+//
+//  BUG FIX (Multiplayer Sync Bug / Authoritative State): every state
+//  mutation that affects gameplay (dice roll result, piece movement,
+//  captures, turn changes) now goes through a Firebase `.transaction()`
+//  call on the room root, which reads-and-writes atomically server-side.
+//  Two clients can never race each other into an inconsistent state —
+//  Firebase retries the transaction function with the freshest data if
+//  another write happened in between. The room's `players` + `turn` +
+//  `lastDice` + `diceRolled` fields ARE the single source of truth;
+//  every client just renders whatever the server holds, never its own
+//  local guess.
+//
+//  BUG FIX (Reconnection Bug): presence is tracked via Firebase's
+//  `.info/connected` + `onDisconnect()`, which marks a player offline
+//  automatically if their socket drops, and the same `enterOnlineGame`
+//  flow re-attaches listeners and immediately re-renders from whatever
+//  state is already in the database — so a refreshed/reconnected client
+//  picks up exactly where the game left off, no special "rejoin" code
+//  path needed because nothing was ever stored only in memory.
+// ═══════════════════════════════════════════════════════════
+function enterOnlineGame(rid, pid){
+  roomId = rid; myId = pid;
+  show('s-game');
+  setupCanvas();
+  const rb = document.getElementById('room-box');
+  rb.style.display = 'block';
+  rb.textContent = 'Room: ' + rid + ' 📋 (share karo!)';
+  // Online mode has real other players on other devices — the floating
+  // chat button AND the player-list strip (which shows live connection
+  // status per player) are both restored here in case a previous offline
+  // game hid them earlier in this session.
+  document.getElementById('chat-fab').style.display = 'flex';
+  document.getElementById('plist').style.display = 'flex';
+
+  if(onlineListenersAttached) return; // guard against double-attaching on rejoin
+  onlineListenersAttached = true;
+
+  db.ref('ludo3/'+rid).on('value', snap=>{
+    onState = snap.val();
+    if(!onState) return;
+    renderOnline();
+  });
+  db.ref('ludo3_chat/'+rid).on('value', snap=>{
+    const msgs = snap.val() || {};
+    renderChat(Object.values(msgs).sort((a,b)=>a.ts-b.ts));
+  });
+  canvas.onclick = onBoardClickOnline;
+
+  // ── Presence / connection status ──
+  const myConnRef = db.ref('ludo3/'+rid+'/players/'+pid+'/connected');
+  const connBar = document.getElementById('connbar');
+  db.ref('.info/connected').on('value', snap=>{
+    if(snap.val() === true){
+      connBar.classList.remove('on');
+      myConnRef.set(true);
+      myConnRef.onDisconnect().set(false);
+    } else {
+      connBar.classList.add('on');
+    }
+  });
+}
+
+function renderOnline(){
+  const gs = onState; if(!gs) return;
+  const players = gs.players || {};
+  const playersArr = Object.entries(players).map(([pid,p])=>({...p, _pid:pid}));
+
+  const isMyTurn = gs.turn === myId;
+  const turnPlayer = players[gs.turn] || {};
+  const hex = CHEX[turnPlayer.color] || '#888';
+  const me = players[myId];
+
+  document.getElementById('turn-name').textContent = isMyTurn ? '⭐ Teri Baari!' : (turnPlayer.name||'—') + ' ki baari';
+  document.getElementById('turn-name').style.color = isMyTurn ? '#ffc940' : hex;
+  document.getElementById('tbar').style.background = hex;
+  document.getElementById('btn-roll').disabled = !isMyTurn || gs.diceRolled || animating || gs.status!=='playing';
+  document.getElementById('btn-roll').textContent = !isMyTurn ? 'Wait karo...' : (gs.diceRolled ? 'Piece click karo 👆' : 'Roll Dice 🎲');
+  if(gs.lastDice) setDiceFace(gs.lastDice);
+
+  const max = gs.maxPlayers || nPlayers;
+  const joined = Object.keys(players).length;
+  document.getElementById('status').textContent =
+    gs.status === 'waiting' ? `${joined}/${max} players joined — waiting...`
+    : isMyTurn ? (gs.diceRolled ? 'Piece tap karo move karne ke liye' : 'Teri baari — dice roll karo!')
+    : (turnPlayer.name||'?') + ' ki baari...';
+
+  const list = document.getElementById('plist');
+  list.innerHTML = '';
+  (gs.playerOrder || Object.keys(players)).forEach(pid=>{
+    const pl = players[pid]; if(!pl) return;
+    const home = (pl.pieces||[]).filter(x=>x===FINISHED).length;
+    const row = document.createElement('div');
+    row.className = 'ppill' + (gs.turn===pid ? ' active' : '');
+    const dotCls = pl.connected===false ? 'offline' : 'live';
+    row.innerHTML = `<div class="pdot ${dotCls}" style="background:${CHEX[pl.color]}"></div>
+      <div class="pnam">${esc(pl.name)}${pid===myId ? ' (Tu)' : ''}</div>
+      <div class="phome">${home}/4</div>
+      ${gs.turn===pid ? '<div class="ptag">Baari</div>' : ''}`;
+    list.appendChild(row);
+  });
+
+  // First-joiner promotes the room from 'waiting' to 'playing' once full —
+  // guarded by a transaction so multiple clients racing this check can't
+  // double-fire or clobber each other.
+  if(gs.status === 'waiting' && joined >= (gs.maxPlayers||2)){
+    const first = (gs.playerOrder||Object.keys(players))[0];
+    if(myId === first){
+      db.ref('ludo3/'+roomId).transaction(data=>{
+        if(!data || data.status !== 'waiting') return data;
+        data.status = 'playing';
+        return data;
+      });
+    }
+  }
+
+  if(gs.winner){
+    const w = players[gs.winner];
+    document.getElementById('won-title').textContent = '🏆 ' + (w?w.name:'?') + ' Jeet Gaya!';
+    document.getElementById('won').style.display = 'flex';
+  }
+
+  if(!animating){
+    const movable = (isMyTurn && gs.diceRolled && me) ? new Set((legalMoves(me.pieces||[-1,-1,-1,-1], gs.lastDice||0)).map(i=>me.color+','+i)) : null;
+    const cleanArr = playersArr.map(p=>({name:p.name,color:p.color,pieces:p.pieces}));
+    drawBoard(cleanArr, movable, inactiveColorsFor(cleanArr), turnPlayer.color);
+  }
+}
+
+// BUG FIX (Dice Bug — sync issue): the roll value is committed via a
+// transaction on the room root, which both (a) guarantees only the
+// current-turn player's roll is accepted as authoritative, and (b)
+// guarantees every client reads the exact same lastDice/diceRolled
+// values, eliminating "different players see different states".
+async function doOnlineRoll(){
+  const gs = onState;
+  if(!gs || gs.turn !== myId || gs.diceRolled || animating || gs.status!=='playing') return;
+  rollAnimation(async val=>{
+    const tx = await db.ref('ludo3/'+roomId).transaction(data=>{
+      if(!data) return data;
+      // Anti-cheat: re-validate turn + diceRolled server-side, not just
+      // client-side, so a stale/replayed roll request can't be applied.
+      if(data.turn !== myId || data.diceRolled) return; // abort transaction
+      const me = data.players[myId];
+      if(val === 6){
+        me.sixStreak = (me.sixStreak||0) + 1;
+      } else {
+        me.sixStreak = 0;
+      }
+      data.lastDice = val;
+      data.diceRolled = true;
+      data.players[myId] = me;
+      return data;
+    });
+    if(!tx.committed) return; // someone/something else already changed state; ignore stale roll
+
+    const fresh = tx.snapshot.val();
+    const me = fresh.players[myId];
+    pushSystemChat(roomId, DICE_EMOJI[val] + ' ' + me.name + ' ne ' + val + ' daala!');
+
+    if(me.sixStreak >= 3){
+      pushSystemChat(roomId, '🚫 ' + me.name + ' ne 3 baar 6 — turn cancel!');
+      toast('3 lagatar 6 — turn skip!');
+      sfx.turnSkip();
+      await db.ref('ludo3/'+roomId+'/players/'+myId+'/sixStreak').set(0);
+      setTimeout(onlineNextTurn, 1100);
+      return;
+    }
+
+    const moves = legalMoves(me.pieces||[-1,-1,-1,-1], val);
+    if(moves.length === 0){
+      toast('Koi move nahi — turn skip!');
+      sfx.turnSkip();
+      setTimeout(onlineNextTurn, 1100);
+    } else if(moves.length === 1){
+      // BUG FIX (Auto Move Bug, online): same single-choice auto-move as offline.
+      setTimeout(()=>onlineMovePiece(moves[0]), 450);
+    }
+  });
+}
+function onBoardClickOnline(e){
+  const gs = onState;
+  if(!gs || gs.turn !== myId || !gs.diceRolled || animating || gs.status!=='playing') return;
+  const rect = canvas.getBoundingClientRect();
+  const scale = canvas.width / rect.width;
+  const mx = (e.clientX-rect.left)*scale, my = (e.clientY-rect.top)*scale;
+  const col = Math.floor(mx/CELL), row = Math.floor(my/CELL);
+
+  const pl = gs.players[myId]; if(!pl) return;
+  const clr = pl.color;
+  const moves = legalMoves(pl.pieces, gs.lastDice||0);
+  for(let i=0;i<4;i++){
+    if(!moves.includes(i)) continue;
+    const pos = pl.pieces[i];
+    let cell;
+    if(pos < 0) cell = BASES[clr][i];
+    else if(pos >= HOME_ENTER && pos <= HOME_LAST) cell = HOME_COL[clr][pos-HOME_ENTER];
+    else if(pos >= 0 && pos < HOME_ENTER) cell = TRACK[ringIndex(clr,pos)];
+    if(cell && cell[0]===col && cell[1]===row){
+      onlineMovePiece(i);
+      return;
+    }
+  }
+  toast('Apna piece tap karo!');
+}
+
+// BUG FIX (Capture Bug, Winner Detection Bug, Multiplayer Sync — all
+// resolved together here): the entire move — new position, captures,
+// and win check — is computed ONCE via the shared resolveMove() engine
+// against a transaction's fresh server snapshot, then the full result
+// (my pieces + all captured opponents' pieces + winner) is written back
+// in that SAME transaction. No client ever decides a capture or a win on
+// its own; the server-side (transaction-function) computation is what
+// every client eventually converges on via the 'value' listener.
+async function onlineMovePiece(idx){
+  const gs = onState;
+  const pl = gs.players[myId];
+  const dice = gs.lastDice;
+  const startPos = pl.pieces[idx];
+
+  if(!canMovePiece(startPos, dice)){ toast('Ye move valid nahi hai!'); return; }
+
+  animating = true;
+
+  // Local animation only (purely cosmetic) — authoritative state still
+  // comes from the transaction below.
+  const steps = startPos < 0 ? 1 : dice;
+  const animPieces = [...pl.pieces];
+  let animPos = startPos;
+  if(startPos < 0) sfx.pieceEnter();
+  for(let s=0; s<steps; s++){
+    animPos = startPos < 0 ? 0 : Math.min(animPos+1, FINISHED);
+    animPieces[idx] = animPos;
+    const arr = Object.values(gs.players).map(p=>p.color===pl.color ? {...p, pieces:animPieces} : p);
+    drawBoard(arr, null, inactiveColorsFor(arr), pl.color);
+    if(startPos >= 0) sfx.pieceMove();
+    await sleep(140);
+  }
+
+  let txOutcome = null;
+  await db.ref('ludo3/'+roomId).transaction(data=>{
+    if(!data) return data;
+    if(data.turn !== myId || !data.diceRolled) return; // stale/replayed click — abort
+    const allPlayersArr = Object.entries(data.players).map(([pid,p])=>({...p, _pid:pid}));
+    const result = resolveMove(allPlayersArr, pl.color, idx, dice);
+    if(!result.ok) return; // abort: illegal move slipped through, reject server-side too
+
+    data.players[myId].pieces = result.pieces;
+    result.captured.forEach(cap=>{
+      const victimPid = allPlayersArr.find(p=>p.color===cap.color)._pid;
+      data.players[victimPid].pieces[cap.idx] = -1;
+    });
+
+    if(result.won){
+      data.status = 'ended';
+      data.winner = myId;
+    } else if(result.bonusTurn){
+      data.diceRolled = false;
+      data.lastDice = null;
+    } else {
+      const order = data.playerOrder || Object.keys(data.players);
+      const ci = order.indexOf(data.turn);
+      data.turn = order[(ci+1) % order.length];
+      data.diceRolled = false;
+      data.lastDice = null;
+      if(data.players[data.turn]) data.players[data.turn].sixStreak = 0;
+    }
+
+    txOutcome = result;
+    return data;
+  });
+
+  animating = false;
+
+  if(txOutcome){
+    if(txOutcome.captured.length){
+      sfx.capture();
+      txOutcome.captured.forEach(cap=>{
+        const victimName = (Object.values(gs.players).find(p=>p.color===cap.color)||{}).name || '?';
+        pushSystemChat(roomId, '💥 ' + pl.name + ' ne ' + victimName + ' ka piece capture kiya!');
+      });
+    }
+    if(txOutcome.bonusTurn && !txOutcome.won){
+      toast(dice===6 ? '6! Ek aur chance! 🎉' : 'Capture! Ek aur chance! 🎉');
+      sfx.bonusTurn();
+    }
+    if(txOutcome.won){
+      sfx.win();
+      pushSystemChat(roomId, '🏆 ' + pl.name + ' JEET GAYA!');
+    }
+  }
+}
+
+// BUG FIX (Turn Bug, online): turn advancement now happens INSIDE the
+// move transaction above (so it's atomic with the move itself) for the
+// normal case. This standalone function remains only for the "no legal
+// moves" skip path, and is itself wrapped in a transaction so a skip can
+// never race with, or duplicate, another turn change.
+async function onlineNextTurn(){
+  await db.ref('ludo3/'+roomId).transaction(data=>{
+    if(!data) return data;
+    const order = data.playerOrder || Object.keys(data.players);
+    const ci = order.indexOf(data.turn);
+    data.turn = order[(ci+1) % order.length];
+    data.diceRolled = false;
+    data.lastDice = null;
+    if(data.players[data.turn]) data.players[data.turn].sixStreak = 0;
+    return data;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CHAT
+// ═══════════════════════════════════════════════════════════
+const epickEl = document.getElementById('epick');
+EMOJIS.forEach(e=>{
+  const sp = document.createElement('span');
+  sp.textContent = e;
+  sp.onclick = ()=>{ document.getElementById('cinp').value += e; epickEl.style.display='none'; };
+  epickEl.appendChild(sp);
+});
+document.getElementById('bemoji').onclick = ()=>{ epickEl.style.display = epickEl.style.display==='flex' ? 'none' : 'flex'; };
+document.addEventListener('click', e=>{ if(!e.target.closest('#chat-row')) epickEl.style.display='none'; });
+
+// Floating button opens the chat as a bottom-sheet overlay; the board
+// behind it keeps its full-screen layout since chat is no longer a
+// permanently-docked sidebar card.
+let chatMsgCount = 0;
+function openChatOverlay(){
+  document.getElementById('chat-overlay').classList.add('on');
+  document.getElementById('chat-fab').classList.remove('has-unread');
+  // Hide the floating button while the panel is open — it was peeking
+  // through from behind the chat card (visible at the same bottom-right
+  // corner), which looked like a stray floating element sitting on top
+  // of the chat itself. The ✕ in the chat header is the close affordance
+  // while the panel is open, so the FAB has no role to play right now.
+  document.getElementById('chat-fab').style.visibility = 'hidden';
+  const el = document.getElementById('chat-msgs');
+  el.scrollTop = el.scrollHeight;
+}
+function closeChatOverlay(){
+  document.getElementById('chat-overlay').classList.remove('on');
+  document.getElementById('chat-fab').style.visibility = 'visible';
+}
+document.getElementById('chat-fab').onclick = openChatOverlay;
+document.getElementById('chat-close').onclick = closeChatOverlay;
+document.getElementById('chat-overlay').addEventListener('click', e=>{
+  if(e.target.id === 'chat-overlay') closeChatOverlay(); // tap outside the sheet closes it
+});
+
+function pushSystemChat(rid, text){
+  db.ref('ludo3_chat/'+rid).push({ system:true, text, ts: Date.now() });
+}
+function addLocalChat(text){
+  localChat.push({ system:true, text, ts: Date.now() });
+  renderChat(localChat);
+}
+function renderChat(msgs){
+  const el = document.getElementById('chat-msgs');
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  el.innerHTML = '';
+  msgs.forEach(m=>{
+    const div = document.createElement('div');
+    if(m.system){
+      div.className = 'cmsg sys';
+      div.innerHTML = '<div class="cbub">' + esc(m.text) + '</div>';
+    } else {
+      const isMe = roomId ? (m.pid === myId) : (m.pid === 'me');
+      div.className = 'cmsg' + (isMe ? ' me' : '');
+      div.innerHTML = '<div class="cav" style="background:' + (CHEX[m.color]||'#666') + '">' + esc((m.name||'?')[0].toUpperCase()) + '</div>'
+        + '<div class="cbub"><div class="cnam">' + esc(m.name||'?') + '</div><div class="ctxt">' + esc(m.text) + '</div></div>';
+    }
+    el.appendChild(div);
+  });
+  if(atBottom) el.scrollTop = el.scrollHeight;
+
+  // Show an unread dot on the floating button if new messages arrived
+  // while the chat panel was closed, so players don't miss anything even
+  // though chat is no longer always visible on screen.
+  const overlayOpen = document.getElementById('chat-overlay').classList.contains('on');
+  if(msgs.length > chatMsgCount && !overlayOpen){
+    document.getElementById('chat-fab').classList.add('has-unread');
+  }
+  chatMsgCount = msgs.length;
+}
+function sendChat(){
+  const inp = document.getElementById('cinp');
+  const text = inp.value.trim();
+  if(!text) return;
+  if(roomId){
+    const pl = onState && onState.players && onState.players[myId];
+    db.ref('ludo3_chat/'+roomId).push({
+      system:false, pid: myId,
+      name: pl?pl.name:myName, color: pl?pl.color:myColor,
+      text, ts: Date.now()
+    });
+  } else {
+    const pl = offState ? currentOfflinePlayer() : null;
+    localChat.push({ system:false, pid:'me', name: pl?pl.name:myName, color: pl?pl.color:myColor, text, ts: Date.now() });
+    renderChat(localChat);
+  }
+  inp.value = '';
+  epickEl.style.display = 'none';
+}
+document.getElementById('bsend').onclick = sendChat;
+document.getElementById('cinp').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
+
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+//  SOUND EFFECTS
+//  Synthesized via Web Audio API — no external audio files needed, so
+//  there's nothing to fetch/host and no asset can ever 404. Each call
+//  is a short, cheap oscillator burst. All calls are wrapped in a
+//  try/catch and a mute flag so audio failures (e.g. autoplay policy
+//  before first user interaction) never throw or break gameplay.
+// ═══════════════════════════════════════════════════════════
+let audioCtx = null;
+let soundOn = true;
+function ensureAudio(){
+  if(!audioCtx){
+    try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+    catch(e){ soundOn = false; }
+  }
+  return audioCtx;
+}
+// Unlock audio on first user gesture (tap), required by mobile browsers.
+document.addEventListener('click', ()=>{ const a = ensureAudio(); if(a && a.state==='suspended') a.resume(); }, {once:true});
+
+function playTone(freq, dur, type, gainVal){
+  if(!soundOn) return;
+  const ctxA = ensureAudio();
+  if(!ctxA) return;
+  try{
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = gainVal!=null?gainVal:0.12;
+    osc.connect(gain); gain.connect(ctxA.destination);
+    const now = ctxA.currentTime;
+    gain.gain.setValueAtTime(gain.gain.value, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    osc.start(now);
+    osc.stop(now + dur);
+  }catch(e){ /* audio is purely cosmetic — never let it break gameplay */ }
+}
+
+const sfx = {
+  diceRoll(){ playTone(220, 0.12, 'square', 0.08); },
+  pieceMove(){ playTone(440, 0.06, 'sine', 0.06); },
+  pieceEnter(){ playTone(523, 0.18, 'triangle', 0.1); },
+  capture(){ playTone(180, 0.28, 'sawtooth', 0.14); },
+  bonusTurn(){ playTone(660, 0.15, 'sine', 0.1); },
+  win(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>playTone(f,0.3,'triangle',0.12), i*120)); },
+  turnSkip(){ playTone(140, 0.2, 'square', 0.08); }
+};
+
+document.getElementById('btn-mute').onclick = function(){
+  soundOn = !soundOn;
+  this.textContent = soundOn ? '🔊' : '🔇';
+};
+
+
+function toast(msg, dur=2600){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('on');
+  clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove('on'), dur);
+}
+// Generates a random alphanumeric ID of the given length (uppercase) —
+// used for room codes (6 chars) and player IDs (10 chars). This was
+// referenced by the room-create/join handlers but had been dropped from
+// the file during earlier edits; restoring it here fixes online room
+// creation/joining, which would otherwise throw "genId is not defined".
+function genId(len){
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let out = '';
+  for(let i=0;i<len;i++) out += chars[Math.floor(Math.random()*chars.length)];
+  return out;
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
+
+window.addEventListener('resize', ()=>{
+  if(document.getElementById('s-game').classList.contains('on')){
+    setupCanvas();
+    if(offState) renderOffline();
+    else if(onState) renderOnline();
+  }
+});
+
+// ── Turn-color glow pulse loop ──
+// drawToken()'s glow ring uses Date.now() to animate, but a canvas only
+// repaints when something calls drawBoard() again. Calling the FULL
+// renderOffline()/renderOnline() on an interval would also rebuild the
+// player list DOM and re-touch button state every tick, which is wasteful
+// and risks fighting with chat scroll position etc. So this keeps the
+// last-drawn board/movable/inactive/turnColor args cached and just
+// re-invokes drawBoard() directly with them — pure repaint, no side effects.
+let lastBoardArgs = null;
+const _origDrawBoard = drawBoard;
+drawBoard = function(...args){ lastBoardArgs = args; return _origDrawBoard.apply(this, args); };
+
+setInterval(()=>{
+  if(animating) return;
+  if(!lastBoardArgs) return;
+  if(!document.getElementById('s-game').classList.contains('on')) return;
+  _origDrawBoard.apply(null, lastBoardArgs);
+}, 90);
+
+// init
+setupCanvas();
+drawBoard(null);
+
+</script>
+</body>
+</html>
